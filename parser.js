@@ -74,7 +74,6 @@ function lex(source_str, ignore = []) {
             add_token(build_token(true_num, token_types.NUMBER, token_cats.VALUE));
 
             populate_number = false;
-            console.log("Number done", index);
             number_str = "";
         }
     }
@@ -153,7 +152,6 @@ function lex(source_str, ignore = []) {
                 } else if (char === ":") {
                     add_token(build_token(char, token_types.COLON, token_cats.DILEMITER));
                 } else if (char === ",") {
-                    console.log("COmma")
                     add_token(build_token(char, token_types.COMMA, token_cats.DILEMITER));
                 } else if (char === "\"" && !populate_buffer) {
                     populate_buffer = true;
@@ -187,16 +185,52 @@ function lex(source_str, ignore = []) {
 
 function parse(tokens) {
     console.log(tokens);
-    // let open_curly = 
+    let open_curly = 0;
+    let open_bracket = 0;
+    let out_json = [];
+
+    function status() {
+        console.log("########## Status Output ##########");
+        console.log("-- Open Curly:", open_curly);
+        console.log("-- Open Bracket:", open_bracket);
+        console.log("");
+    }
+
+    tokens.forEach((token) => {
+        switch (token.type) {
+            case token_types.L_BRACE:
+                open_curly++;
+                break;
+            case token_types.L_BRACKET:
+                open_bracket++;
+                break;
+            case token_types.R_BRACE:
+                open_curly--;
+                break;
+            case token_types.R_BRACKET:
+                open_bracket--;
+                break;
+        }
+
+        status();
+    });
+
+    return out_json;
 }
 
 const a_str = `{
     "name": "Rayyan Khan \\"A programmer\\"",
     "age": 16,
     "Has A Job": true,
-    "array": [ 1, 2, 3, 4, 5 ]
+    "array": [ 1, 2, 3.000001, 4, 5 ]
 }`;
 
 const b_str = `1, 2`
 
-parse(lex(a_str, [ token_types.NEWLINE, token_types.WHITESPACE ]));
+console.log(
+    parse(
+        lex(
+            a_str, [ 
+                token_types.NEWLINE, 
+                token_types.WHITESPACE 
+            ])));
