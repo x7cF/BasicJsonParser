@@ -1,8 +1,3 @@
-const source_str = `{
-    "name": "Rayyan",
-    "age": 16
-}`;
-
 const token_types = {
     WHITESPACE: 0,
     NEWLINE: 1,
@@ -23,23 +18,29 @@ const token_cats = {
     DILEMITER: 2
 };
 
-function build_token(value, type, category) {
-    return { value, type, category };
-}
+function lex(source_str, ignore = []) {
+    function build_token(value, type, category) {
+        return { value, type, category };
+    }
+    
+    function char_is_number(ch) {
+        let symbols = "0123456789.".split("");
+        return symbols.includes(ch);
+    }
 
-function char_is_number(ch) {
-    let symbols = "0123456789.".split("");
-    return symbols.includes(ch);
-}
+    function is_letter(str) {
+        return str.length === 1 && str.match(/[a-z]/i);
+    }
 
-function lex() {
     const out_tokens = [];
 
     let buffer = "";
     let escaping = false;
     let populate_buffer = false;
     let populate_number = false;
+    let populate_boolean = false;
     let number_str = "";
+    let boolean = "";
 
     function print_debug(char, index) {
         console.log("-- Char: " + char);
@@ -51,10 +52,39 @@ function lex() {
         console.log(out_tokens);
     }
 
+    function add_token(token) {
+        if (ignore.length == 0 || !ignore.includes(token.type)) {
+            out_tokens.push(token);
+        }
+    }
+
     source_str
         .split("")
         .forEach((char, index, chars) => {
-            if (populate_number) {
+            if (populate_boolean) {
+                if (!is_letter(char)) {
+                    const b_str = boolean.toLowerCase();
+                    let bool = false;
+
+                    if (b_str === "true") {
+                        bool = true;
+                    } else if (b_str === "false") {
+                        bool = false;
+                    } else {
+                        console.log("JSON parse error");
+                        console.log("-- Error: Unrecognized keyword: " + boolean);
+                        print_debug();
+                        process.exit(1);
+                    }
+
+                    add_token(build_token(bool, token_types.BOOLEAN, token_cats.VALUE));
+
+                    populate_boolean = false;
+                    boolean = "";
+                } else {
+                    boolean += char;
+                }
+            } else if (populate_number) {
                 if (!char_is_number(char)) {
                     // Check multiple decimal places
                     const old_str = number_str.replace(".", "");
@@ -66,13 +96,12 @@ function lex() {
                     }
                     
                     const true_num = Number(number_str);
-                    out_tokens.push(build_token(true_num, token_types.NUMBER, token_cats.VALUE));
+                    add_token(build_token(true_num, token_types.NUMBER, token_cats.VALUE));
 
                     populate_number = false;
                     number_str = "";
                 } else {
                     number_str += char;
-                    console.log(char)
                 }
             } else if (populate_buffer) {
                 /**
@@ -93,7 +122,7 @@ function lex() {
 
                     process.exit(1);
                 } else if (char === "\"") {
-                    out_tokens.push(build_token(buffer, token_types.RAW_STRING, token_cats.VALUE));
+                    add_token(build_token(buffer, token_types.RAW_STRING, token_cats.VALUE));
                     populate_buffer = false;
                     buffer = "";
                 } else {
@@ -104,21 +133,21 @@ function lex() {
                  * Deal with simple capture symbols
                  */
                 if (char === "{") {
-                    out_tokens.push(build_token(char, token_types.L_BRACE, token_cats.GROUPING));
+                    add_token(build_token(char, token_types.L_BRACE, token_cats.GROUPING));
                 } else if (char === "}") {
-                    out_tokens.push(build_token(char, token_types.R_BRACE, token_cats.GROUPING));
+                    add_token(build_token(char, token_types.R_BRACE, token_cats.GROUPING));
                 } else if (char === "[") {
-                    out_tokens.push(build_token(char, token_types.L_BRACKET, token_cats.GROUPING));
+                    add_token(build_token(char, token_types.L_BRACKET, token_cats.GROUPING));
                 } else if (char === "]") {
-                    out_tokens.push(build_token(char, token_types.R_BRACKET, token_cats.GROUPING));
+                    add_token(build_token(char, token_types.R_BRACKET, token_cats.GROUPING));
                 } else if (char === "\n") {
-                    out_tokens.push(build_token(char, token_types.NEWLINE, token_cats.DILEMITER));
+                    add_token(build_token(char, token_types.NEWLINE, token_cats.DILEMITER));
                 } else if (char === " " || char === "\t") {
-                    out_tokens.push(build_token(char, token_types.WHITESPACE, token_cats.DILEMITER));
+                    add_token(build_token(char, token_types.WHITESPACE, token_cats.DILEMITER));
                 } else if (char === ":") {
-                    out_tokens.push(build_token(char, token_types.COLON, token_cats.DILEMITER));
+                    add_token(build_token(char, token_types.COLON, token_cats.DILEMITER));
                 } else if (char === ",") {
-                    out_tokens.push(build_token(char, token_types.COMMA, token_cats.DILEMITER));
+                    add_token(build_token(char, token_types.COMMA, token_cats.DILEMITER));
                 } else if (char === "\"" && !populate_buffer) {
                     populate_buffer = true;
                 } else if (char_is_number(char)) {
@@ -127,6 +156,19 @@ function lex() {
                      */
                     populate_number = true;
                     number_str += char;
+                } else if (
+                    char === "t" 
+                    || char === "T"
+                    || char === "f"
+                    || char === "F"
+                ) {
+                    populate_boolean = true;
+                    boolean += char;
+                } else {
+                    console.log("JSON parse error");
+                    console.log("Error: Unexpected symbol: " + char);
+
+                    process.exit(1);
                 }
             }
         });
@@ -134,6 +176,13 @@ function lex() {
     return out_tokens;
 }
 
-// Test the lexer
-const tokens = lex();
-console.log(tokens);
+function parse(source_str) {
+    const tokens = lex(source_str, [ token_types.NEWLINE, token_types.WHITESPACE ]);
+    console.log(tokens);
+}
+
+parse(`{
+    "name": "Rayyan Khan \\"A programmer\\"",
+    "age": 16,
+    "Has A Job": true
+}`);
