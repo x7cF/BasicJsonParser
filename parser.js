@@ -58,11 +58,33 @@ function lex(source_str, ignore = []) {
         }
     }
 
+    function check_number(index, chars) {
+        if (!char_is_number(chars[index + 1])) {
+            console.log(chars[index])
+            // Check multiple decimal places
+            const old_str = number_str.replace(".", "");
+            const new_str = old_str.replace(".", "");
+            
+            if (old_str.length > new_str.length) {
+                process.exit(1);
+                print_debug();
+            }
+            
+            const true_num = Number(number_str);
+            add_token(build_token(true_num, token_types.NUMBER, token_cats.VALUE));
+
+            populate_number = false;
+            console.log("Number done", index);
+            number_str = "";
+        }
+    }
+
     source_str
         .split("")
         .forEach((char, index, chars) => {
             if (populate_boolean) {
-                if (!is_letter(char)) {
+                if (!is_letter(chars[index + 1])) {
+                    boolean += char;
                     const b_str = boolean.toLowerCase();
                     let bool = false;
 
@@ -85,24 +107,8 @@ function lex(source_str, ignore = []) {
                     boolean += char;
                 }
             } else if (populate_number) {
-                if (!char_is_number(char)) {
-                    // Check multiple decimal places
-                    const old_str = number_str.replace(".", "");
-                    const new_str = old_str.replace(".", "");
-                    
-                    if (old_str.length > new_str.length) {
-                        process.exit(1);
-                        print_debug();
-                    }
-                    
-                    const true_num = Number(number_str);
-                    add_token(build_token(true_num, token_types.NUMBER, token_cats.VALUE));
-
-                    populate_number = false;
-                    number_str = "";
-                } else {
-                    number_str += char;
-                }
+                number_str += char;
+                check_number(index, chars);
             } else if (populate_buffer) {
                 /**
                  * Store string associated charachters and handle escape logic
@@ -147,6 +153,7 @@ function lex(source_str, ignore = []) {
                 } else if (char === ":") {
                     add_token(build_token(char, token_types.COLON, token_cats.DILEMITER));
                 } else if (char === ",") {
+                    console.log("COmma")
                     add_token(build_token(char, token_types.COMMA, token_cats.DILEMITER));
                 } else if (char === "\"" && !populate_buffer) {
                     populate_buffer = true;
@@ -156,6 +163,8 @@ function lex(source_str, ignore = []) {
                      */
                     populate_number = true;
                     number_str += char;
+
+                    check_number(index, chars);
                 } else if (
                     char === "t" 
                     || char === "T"
@@ -176,13 +185,18 @@ function lex(source_str, ignore = []) {
     return out_tokens;
 }
 
-function parse(source_str) {
-    const tokens = lex(source_str, [ token_types.NEWLINE, token_types.WHITESPACE ]);
+function parse(tokens) {
     console.log(tokens);
+    // let open_curly = 
 }
 
-parse(`{
+const a_str = `{
     "name": "Rayyan Khan \\"A programmer\\"",
     "age": 16,
-    "Has A Job": true
-}`);
+    "Has A Job": true,
+    "array": [ 1, 2, 3, 4, 5 ]
+}`;
+
+const b_str = `1, 2`
+
+parse(lex(a_str, [ token_types.NEWLINE, token_types.WHITESPACE ]));
