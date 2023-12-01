@@ -60,7 +60,6 @@ function lex(source_str, ignore = []) {
 
     function check_number(index, chars) {
         if (!char_is_number(chars[index + 1])) {
-            console.log(chars[index])
             // Check multiple decimal places
             const old_str = number_str.replace(".", "");
             const new_str = old_str.replace(".", "");
@@ -183,36 +182,107 @@ function lex(source_str, ignore = []) {
     return out_tokens;
 }
 
+const context_type = {
+    OBJECT: 0,
+    ARRAY: 1,
+    PROPERTY: 2
+}
+
+const enable_logging = true;
+
+function log(text) {
+    if (enable_logging) {
+        if (Array.isArray(text)) {
+            text.forEach((line) => console.log(line));
+        } else {
+            console.log(text);
+        }
+    }
+}
+
 function parse(tokens) {
     console.log(tokens);
-    let open_curly = 0;
-    let open_bracket = 0;
     let out_json = [];
+    let context = [];
+
+    function translate_context(ctx) {
+        if (ctx == context_type.OBJECT) {
+            return "OBJECT";
+        } else if (ctx == context_type.ARRAY) {
+            return "ARRAY";
+        } else if (ctx == context_type.PROPERTY) {
+            return "PROPERTY";
+        }
+    }
+
+    function translate_contexts() {
+        let out = [];
+        context.forEach((ctx) => {
+            out.push(translate_context(ctx));
+        });
+        return out.join("->");
+    }
 
     function status() {
-        console.log("########## Status Output ##########");
-        console.log("-- Open Curly:", open_curly);
-        console.log("-- Open Bracket:", open_bracket);
-        console.log("");
+        log("########## Status Output ##########");
+        log("-- Parser Context: " + translate_contexts());
+        log("");
     }
+
+    function parse_error(title, reasons = []) {
+        log("Failed to parse JSON input at: " + "None");
+        reasons.forEach((reason) => log("-- Reason: " + reason));
+
+        process.exit(1);
+    }
+
+    // Usually triggered after an object is opened or if a comma is placed
+    let key_mode_open = false;
 
     tokens.forEach((token) => {
         switch (token.type) {
             case token_types.L_BRACE:
-                open_curly++;
+                context.push(context_type.OBJECT);
+                key_mode_open = true;
                 break;
             case token_types.L_BRACKET:
-                open_bracket++;
+                context.push(context_type.ARRAY);
                 break;
             case token_types.R_BRACE:
-                open_curly--;
+                if (context[context.length - 1] != context_type.OBJECT) {
+                    parse_error("Extra right brace symbol", [ "Closing curly brace added before opening curly brace" ]);
+                }
+
+                context.pop();
                 break;
             case token_types.R_BRACKET:
-                open_bracket--;
+                if (context[context.length - 1] != context_type.ARRAY) {
+                    parse_error("Extra right bracket symbol", [ "Closing bracket added before opening bracket" ]);
+                }
+
+                context.pop();
                 break;
         }
 
-        status();
+        const current_context = context[context.length - 1];
+
+        // [Complex behavior] Detect commas
+        if (token.type == token_types.COMMA && current_context == context_type.OBJECT) {
+            key_mode_open = true;
+            log([
+                "Entered comma mode with contex: " + translate_context(current_context),
+                "-- [Maybe] Ready to accept properties"
+            ]);
+        }
+        const permit_key_declaration = current_context == context_type.OBJECT && key_mode_open;
+
+        if (permit_key_declaration) {
+            let node = {
+
+            }
+        }
+
+        // status();
     });
 
     return out_json;
@@ -222,7 +292,7 @@ const a_str = `{
     "name": "Rayyan Khan \\"A programmer\\"",
     "age": 16,
     "Has A Job": true,
-    "array": [ 1, 2, 3.000001, 4, 5 ]
+    "array": [ 1, 2, 3.000001, [1, 2, 3, { "Hi": true }], 4, 5 ]
 }`;
 
 const b_str = `1, 2`
