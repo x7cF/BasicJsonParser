@@ -241,6 +241,9 @@ function resolve(ast = {}, length = 0) {
 
 function elog(text, started = false) {
     log(text);
+    if (enable_logging) {
+        console.trace();
+    }
     return { error: true, ast: null, message: text, started };
 }
 
@@ -255,29 +258,31 @@ function parse_value(tokens) {
         && value.type != token_types.NUMBER
     ) {
         const object_data = parse_object(tokens);
-        const array_data = parse_array(tokens);
+        const array_data = parse_object(tokens, true);
 
-        if (object_data.started || object_data.error)
+        if (!object_data.error)
             return object_data;
-        if (array_data.started || array_data.error)
+        if (!array_data.error)
             return array_data;
         if (object_data.error && array_data.error)
-            return elog("[VALUE] Unexpected: " + JSON.stringify(value)), true;
+            return elog("[VALUE] Unexpected: " + JSON.stringify(value), true);
 
         return elog("Invalid value: " + JSON.stringify(value));
     }
 
-    return resolve({ value: tokens[0] }, 1);
+    return resolve({ value: tokens[0], type: "value" }, 1);
 }
 
-function parse_object(tokens) {
+function parse_object(tokens, array_mode = false) {
     if (!(tokens.length >= 2))
-        return elog("[OBJECT] Could not parse, object does not possible contain the 2 neccessary basics ({ and })");
+        return elog("[OBJECT] Could not parse, object does not possible contain the 2 neccessary basics ({ and } or [ and ])");
 
     const l_curly = tokens[0];
     
-    if (l_curly.type != token_types.L_BRACE) 
+    if (!array_mode && l_curly.type != token_types.L_BRACE) 
         return elog("[OBJECT] Could not parse, object does not start with L_CURLY");
+    if (array_mode && l_curly.type != token_types.L_BRACKET) 
+        return elog("[OBJECT] Could not parse, object does not start with L_BRACKET");
 
     // Only 2 things may pass
     // - COMMA
@@ -300,24 +305,37 @@ function parse_object(tokens) {
             return;
         }
 
-        if (token.type == token_types.R_BRACE && !expecting_property) {
+        if (
+            (!array_mode && token.type == token_types.R_BRACE && !expecting_property)
+            || (array_mode && token.type == token_types.R_BRACKET && !expecting_property)
+        ) {
             length += 1;
             expecting_property = false;
             return sig.halt();
         }
 
-        const property_data = parse_property(after(tokens, index));
-        if (!property_data.error) {
-            expecting_property = false;
-            length += property_data.length;
-            properties.push(property_data.ast)
-            return sig.skip(property_data.length);
+        if (array_mode) {
+            const value_data = parse_value(after(tokens, index));
+            if (!value_data.error) {
+                expecting_property = false;
+                length += value_data.length;
+                properties.push(value_data.ast)
+                return sig.skip(value_data.length);
+            }
+        } else {
+            const property_data = parse_property(after(tokens, index));
+            if (!property_data.error) {
+                expecting_property = false;
+                length += property_data.length;
+                properties.push(property_data.ast)
+                return sig.skip(property_data.length);
+            }
         }
         
-        if (!expecting_property) {
-            sig.halt();
-            return error_data = elog("[OBJECT] Unexpected data, unterminated object", true);
-        }
+        // if (!expecting_property) {
+        //     sig.halt();
+        //     return error_data = elog("[OBJECT] Unexpected data, unterminated object", true);
+        // }
 
         sig.halt();
         error_data = elog("[OBJECT] Unexpected: " + JSON.stringify(token), true);
@@ -328,12 +346,8 @@ function parse_object(tokens) {
 
     return resolve({
         value: properties,
-        type: "object"
+        type: !array_mode ? "object" : "array"
     }, length);
-}
-
-function parse_array(tokens) {
-    return elog("No", false);
 }
 
 function parse_property(tokens) {
@@ -359,7 +373,7 @@ function parse_property(tokens) {
             key: property_data.value,
             value: value_data.ast.value,
             type: value_data.ast.type
-        }, 1 + value_data.length);
+        }, 2 + value_data.length);
     }
 
     return resolve({
@@ -371,7 +385,7 @@ function parse_property(tokens) {
 
 function parse_root(tokens) {
     const object_data = parse_object(after(tokens, -1));
-    const array_data = parse_array(after(tokens, -1));
+    const array_data = parse_object(after(tokens, -1), true);
     
     if (!object_data.error)
         return object_data;
@@ -390,20 +404,26 @@ function parse_root(tokens) {
 function generate_object(ast) {
     let out_object = null;
 
-    if (ast.key && !Array.isArray(ast.value)) {
-        throw new Error("Cannot convert prop to ast");
+    if (ast.type == "value") {
+        return ast.value.value;
+    }
+
+    if (ast?.key && !Array.isArray(ast.value)) {
+        return ast;
     }
 
     if (ast.type == "object") {
         out_object = {};
 
         ast.value.forEach((val) => {
-            if (val.type == "property") {
-                out_object[val.key] = val.value;
-            } else if (val.type == "object") {
-                out_object[val.key] = generate_object(val);
-            }
-        })
+            out_object[val.key] = generate_object(val);
+        });
+    } else if (ast.type == "array") {
+        out_object = [];
+
+        ast.value.forEach((val) => {
+            out_object.push(generate_object(val));
+        });
     }
 
     return out_object;
@@ -419,9 +439,27 @@ function JSONparser(json_in) {
     return object;
 }
 
-const b_str = `{ "c": { "a": true, "b": 1, "none": { "greet": "hii" } } }`
+function Arrayparser(json_in) {
+    const lexed = lex(json_in, [ token_types.WHITESPACE, token_types.NEWLINE ]);
+    const parsed = parse_object(lexed, true);
+    
+    console.log(parsed);
+    return parsed;
+}
+
+const b_str = `{ "c": { "a": false, "b": 1, "none": [ "greet", "hello", [[]] ] } }`
+const c_str = `[ true, false, [] ]`;
+const d_str = `{ "a": [] }`
 
 console.clear();
 // enable_logging = true;
-const parsed = JSONparser(b_str);
-console.log(JSON.stringify(parsed, null, 4));
+
+// {
+//     const parsed = Arrayparser(c_str);
+//     console.log(JSON.stringify(parsed, null, 4));
+// }
+
+{
+    const json = JSONparser(b_str);
+    console.log(JSON.stringify(json, null, 4));
+}
