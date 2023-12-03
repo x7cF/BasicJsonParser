@@ -408,7 +408,7 @@ function generate_object(ast) {
         return ast.value.value;
     }
 
-    if (ast?.key && !Array.isArray(ast.value)) {
+    if (ast && ast.key && !Array.isArray(ast.value)) {
         return ast.value;
     }
 
