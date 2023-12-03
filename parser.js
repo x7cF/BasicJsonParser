@@ -304,23 +304,16 @@ function parse_object(tokens) {
             length += 1;
             expecting_property = false;
             return sig.halt();
-        } else if (expecting_property) {
-            length += 1;
-            error_data = elog("[OBJECT] Illegal closing", true);
-            return sig.halt();
         }
 
         const property_data = parse_property(after(tokens, index));
         if (!property_data.error) {
             expecting_property = false;
-            console.log(property_data)
             length += property_data.length;
             properties.push(property_data.ast)
             return sig.skip(property_data.length);
-        } else {
-            console.log(property_data)
         }
-
+        
         if (!expecting_property) {
             sig.halt();
             return error_data = elog("[OBJECT] Unexpected data, unterminated object", true);
@@ -334,7 +327,8 @@ function parse_object(tokens) {
         return error_data;
 
     return resolve({
-        value: properties
+        value: properties,
+        type: "object"
     }, length);
 }
 
@@ -349,26 +343,29 @@ function parse_property(tokens) {
     const property_data = tokens[0];
     const colon_data = tokens[1];
     const value_data = parse_value(after(tokens, 1));
-
-
     
     if (
         property_data.type != token_types.RAW_STRING
         || colon_data.type != token_types.COLON
         || value_data.error
     )
-        return elog("[PROPERTY] Could not parse, property does not meet JSON standard of (PROP_NAME, COLON, PROP_VALUE)")
+        return elog([
+            "[PROPERTY] Could not parse, property does not meet JSON standard of (PROP_NAME, COLON, PROP_VALUE)",
+            `-- ${value_data.message}`
+        ]);
 
     if (Array.isArray(value_data.ast.value)) {
         return resolve({
             key: property_data.value,
-            value: value_data.ast.value
-        }, 2 + value_data.length);
+            value: value_data.ast.value,
+            type: value_data.ast.type
+        }, 1 + value_data.length);
     }
 
     return resolve({
         key: property_data.value,
-        value: value_data.ast.value.value
+        value: value_data.ast.value.value,
+        type: "property"
     }, 3);
 }
 
@@ -390,18 +387,41 @@ function parse_root(tokens) {
     }
 } 
 
+function generate_object(ast) {
+    let out_object = null;
+
+    if (ast.key && !Array.isArray(ast.value)) {
+        throw new Error("Cannot convert prop to ast");
+    }
+
+    if (ast.type == "object") {
+        out_object = {};
+
+        ast.value.forEach((val) => {
+            if (val.type == "property") {
+                out_object[val.key] = val.value;
+            } else if (val.type == "object") {
+                out_object[val.key] = generate_object(val);
+            }
+        })
+    }
+
+    return out_object;
+}
+
 const a_str = `"a": { "b": true, "are": true }`;
 
 function JSONparser(json_in) {
     const lexed = lex(json_in, [ token_types.WHITESPACE, token_types.NEWLINE ]);
-    const parsed = parse_property(lexed);
+    const parsed = parse_value(lexed);
+    const object = generate_object(parsed.ast);
 
-    return parsed;
+    return object;
 }
 
-const b_str = `{ "c": { "a": true, "b": 1 } }`
+const b_str = `{ "c": { "a": true, "b": 1, "none": { "greet": "hii" } } }`
 
 console.clear();
 // enable_logging = true;
-const parsed = JSONparser(a_str);
+const parsed = JSONparser(b_str);
 console.log(JSON.stringify(parsed, null, 4));
