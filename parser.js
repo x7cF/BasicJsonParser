@@ -409,7 +409,7 @@ function generate_object(ast) {
     }
 
     if (ast?.key && !Array.isArray(ast.value)) {
-        return ast;
+        return ast.value;
     }
 
     if (ast.type == "object") {
@@ -429,8 +429,6 @@ function generate_object(ast) {
     return out_object;
 }
 
-const a_str = `"a": { "b": true, "are": true }`;
-
 function JSONparser(json_in) {
     const lexed = lex(json_in, [ token_types.WHITESPACE, token_types.NEWLINE ]);
     const parsed = parse_value(lexed);
@@ -447,7 +445,13 @@ function Arrayparser(json_in) {
     return parsed;
 }
 
-const b_str = `{ "c": { "a": false, "b": 1, "none": [ "greet", "hello", [[]] ] } }`
+const a_str = `{
+    "name": "Rayyan Khan \\"A programmer\\"",
+    "age": 16,
+    "Has A Job": true,
+    "arr": [ 1, 2, 3.000001, [1, 2, 3, { "Hi": true }], 4, 5 ]
+}`;
+const b_str = `true`
 const c_str = `[ true, false, [] ]`;
 const d_str = `{ "a": [] }`
 
@@ -460,6 +464,6 @@ console.clear();
 // }
 
 {
-    const json = JSONparser(b_str);
+    const json = JSONparser(a_str);
     console.log(JSON.stringify(json, null, 4));
 }
