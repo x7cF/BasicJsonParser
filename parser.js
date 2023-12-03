@@ -19,6 +19,11 @@ const token_cats = {
 };
 
 function lex(source_str, ignore = []) {
+    // To resolve 1 char look ahead issue.
+    // This lexer will look ahead by one charachter often, 
+    // if the string is near the end an error will rise. 
+    source_str += "\0";
+
     function build_token(value, type, category) {
         return { value, type, category };
     }
@@ -182,10 +187,26 @@ function lex(source_str, ignore = []) {
     return out_tokens;
 }
 
-const context_type = {
-    OBJECT: 0,
-    ARRAY: 1,
-    PROPERTY: 2
+function iterate(array, callback) {
+    let index = 0;
+    let end = false;
+
+    while (index < array.length && !end) {
+        const sig = {
+            halt: () => {
+                end = true;
+            },
+            jump: (i) => {
+                index = i;
+            },
+            skip: (i) => {
+                index += i;
+            }
+        }
+        
+        callback(array[index], index, sig)
+        index++;
+    }
 }
 
 const enable_logging = true;
@@ -200,93 +221,47 @@ function log(text) {
     }
 }
 
-function parse(tokens) {
-    console.log(tokens);
-    let out_json = [];
-    let context = [];
+const context_type = {
+    OBJECT: 0,
+    ARRAY: 1,
+    PROPERTY: 2,
+    ROOT: 3
+}
 
-    function translate_context(ctx) {
-        if (ctx == context_type.OBJECT) {
-            return "OBJECT";
-        } else if (ctx == context_type.ARRAY) {
-            return "ARRAY";
-        } else if (ctx == context_type.PROPERTY) {
-            return "PROPERTY";
-        }
-    }
+function after(arr, ind) {
+    return arr.filter((_, i) => i > ind);
+}
 
-    function translate_contexts() {
-        let out = [];
-        context.forEach((ctx) => {
-            out.push(translate_context(ctx));
-        });
-        return out.join("->");
-    }
+function resolve(ast = {}, length = 0) {
+    return { ast, length }
+}
 
-    function status() {
-        log("########## Status Output ##########");
-        log("-- Parser Context: " + translate_contexts());
-        log("");
-    }
+function parse_property(tokens) {
+    let resolved = resolve();
 
-    function parse_error(title, reasons = []) {
-        log("Failed to parse JSON input at: " + "None");
-        reasons.forEach((reason) => log("-- Reason: " + reason));
-
-        process.exit(1);
-    }
-
-    // Usually triggered after an object is opened or if a comma is placed
-    let key_mode_open = false;
-
-    tokens.forEach((token) => {
-        switch (token.type) {
-            case token_types.L_BRACE:
-                context.push(context_type.OBJECT);
-                key_mode_open = true;
-                break;
-            case token_types.L_BRACKET:
-                context.push(context_type.ARRAY);
-                break;
-            case token_types.R_BRACE:
-                if (context[context.length - 1] != context_type.OBJECT) {
-                    parse_error("Extra right brace symbol", [ "Closing curly brace added before opening curly brace" ]);
-                }
-
-                context.pop();
-                break;
-            case token_types.R_BRACKET:
-                if (context[context.length - 1] != context_type.ARRAY) {
-                    parse_error("Extra right bracket symbol", [ "Closing bracket added before opening bracket" ]);
-                }
-
-                context.pop();
-                break;
-        }
-
-        const current_context = context[context.length - 1];
-
-        // [Complex behavior] Detect commas
-        if (token.type == token_types.COMMA && current_context == context_type.OBJECT) {
-            key_mode_open = true;
-            log([
-                "Entered comma mode with contex: " + translate_context(current_context),
-                "-- [Maybe] Ready to accept properties"
-            ]);
-        }
-        const permit_key_declaration = current_context == context_type.OBJECT && key_mode_open;
-
-        if (permit_key_declaration) {
-            let node = {
-
-            }
-        }
-
-        // status();
+    iterate(tokens, (token, index, sig) => {
+        // Property expects
+        // RAW_STRING -> COLON -> (RAW_STRING/BOOLEAN/NUMBER)
     });
 
-    return out_json;
+    return resolved;
 }
+
+function parse_root(tokens) {
+    let resolved = resolve();
+
+    iterate(tokens, (token, index, sig) => {
+        let node = {};
+
+        // Root expects
+        // - Array
+        // - Object
+
+        console.log("Root mode", token);
+    });
+
+    return resolved;
+} 
 
 const a_str = `{
     "name": "Rayyan Khan \\"A programmer\\"",
@@ -295,12 +270,7 @@ const a_str = `{
     "array": [ 1, 2, 3.000001, [1, 2, 3, { "Hi": true }], 4, 5 ]
 }`;
 
-const b_str = `1, 2`
+const b_str = `"a": true`
 
-console.log(
-    parse(
-        lex(
-            a_str, [ 
-                token_types.NEWLINE, 
-                token_types.WHITESPACE 
-            ])));
+const lexed = lex(b_str, [ token_types.WHITESPACE, token_types.NEWLINE ]);
+const parsed = parse_property()
