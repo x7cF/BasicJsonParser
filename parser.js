@@ -9,7 +9,8 @@ const token_types = {
     COMMA: 7,
     BOOLEAN: 8,
     RAW_STRING: 9,
-    NUMBER: 10
+    NUMBER: 10,
+    EOF: 11
 };
 
 const token_cats = {
@@ -141,7 +142,9 @@ function lex(source_str, ignore = []) {
                 /**
                  * Deal with simple capture symbols
                  */
-                if (char === "{") {
+                if (char === "\0") {
+                    add_token(build_token(char, token_types.EOF, token_cats.VALUE));
+                } else if (char === "{") {
                     add_token(build_token(char, token_types.L_BRACE, token_cats.GROUPING));
                 } else if (char === "}") {
                     add_token(build_token(char, token_types.R_BRACE, token_cats.GROUPING));
@@ -200,7 +203,7 @@ function iterate(array, callback) {
                 index = i;
             },
             skip: (i) => {
-                index += i;
+                index += i - 1;
             }
         }
         
@@ -209,7 +212,7 @@ function iterate(array, callback) {
     }
 }
 
-const enable_logging = true;
+let enable_logging = false;
 
 function log(text) {
     if (enable_logging) {
@@ -233,44 +236,172 @@ function after(arr, ind) {
 }
 
 function resolve(ast = {}, length = 0) {
-    return { ast, length }
+    return { ast, length, error: false, started: true }
+}
+
+function elog(text, started = false) {
+    log(text);
+    return { error: true, ast: null, message: text, started };
+}
+
+function parse_value(tokens) {
+    if (!(tokens.length >= 1))
+        return elog("[VALUE] Could not parse, value does not have 1 element avaliable");
+
+    const value = tokens[0];
+    if (
+        value.type != token_types.RAW_STRING
+        && value.type != token_types.BOOLEAN
+        && value.type != token_types.NUMBER
+    ) {
+        const object_data = parse_object(tokens);
+        const array_data = parse_array(tokens);
+
+        if (object_data.started || object_data.error)
+            return object_data;
+        if (array_data.started || array_data.error)
+            return array_data;
+        if (object_data.error && array_data.error)
+            return elog("[VALUE] Unexpected: " + JSON.stringify(value)), true;
+
+        return elog("Invalid value: " + JSON.stringify(value));
+    }
+
+    return resolve({ value: tokens[0] }, 1);
+}
+
+function parse_object(tokens) {
+    if (!(tokens.length >= 2))
+        return elog("[OBJECT] Could not parse, object does not possible contain the 2 neccessary basics ({ and })");
+
+    const l_curly = tokens[0];
+    
+    if (l_curly.type != token_types.L_BRACE) 
+        return elog("[OBJECT] Could not parse, object does not start with L_CURLY");
+
+    // Only 2 things may pass
+    // - COMMA
+    // - Property
+
+    let properties = [];
+    let error_data = null;
+    let expecting_property = false;
+    let length = 1;
+
+    iterate(after(tokens, 0), (token, index, sig) => {
+        if (token.type == token_types.COMMA) {
+            if (expecting_property) {
+                sig.halt();
+                return error_data = elog("[OBJECT] Unexpected comma while expecting property", true);
+            }
+
+            length += 1;
+            expecting_property = true;
+            return;
+        }
+
+        if (token.type == token_types.R_BRACE && !expecting_property) {
+            length += 1;
+            expecting_property = false;
+            return sig.halt();
+        } else if (expecting_property) {
+            length += 1;
+            error_data = elog("[OBJECT] Illegal closing", true);
+            return sig.halt();
+        }
+
+        const property_data = parse_property(after(tokens, index));
+        if (!property_data.error) {
+            expecting_property = false;
+            console.log(property_data)
+            length += property_data.length;
+            properties.push(property_data.ast)
+            return sig.skip(property_data.length);
+        } else {
+            console.log(property_data)
+        }
+
+        if (!expecting_property) {
+            sig.halt();
+            return error_data = elog("[OBJECT] Unexpected data, unterminated object", true);
+        }
+
+        sig.halt();
+        error_data = elog("[OBJECT] Unexpected: " + JSON.stringify(token), true);
+    });
+
+    if (error_data != null)
+        return error_data;
+
+    return resolve({
+        value: properties
+    }, length);
+}
+
+function parse_array(tokens) {
+    return elog("No", false);
 }
 
 function parse_property(tokens) {
-    let resolved = resolve();
+    if (!(tokens.length >= 3)) 
+        return elog("[PROPERTY] Could not parse, property does not have 3 elements avaliable");
 
-    iterate(tokens, (token, index, sig) => {
-        // Property expects
-        // RAW_STRING -> COLON -> (RAW_STRING/BOOLEAN/NUMBER)
-    });
+    const property_data = tokens[0];
+    const colon_data = tokens[1];
+    const value_data = parse_value(after(tokens, 1));
 
-    return resolved;
+
+    
+    if (
+        property_data.type != token_types.RAW_STRING
+        || colon_data.type != token_types.COLON
+        || value_data.error
+    )
+        return elog("[PROPERTY] Could not parse, property does not meet JSON standard of (PROP_NAME, COLON, PROP_VALUE)")
+
+    if (Array.isArray(value_data.ast.value)) {
+        return resolve({
+            key: property_data.value,
+            value: value_data.ast.value
+        }, 2 + value_data.length);
+    }
+
+    return resolve({
+        key: property_data.value,
+        value: value_data.ast.value.value
+    }, 3);
 }
 
 function parse_root(tokens) {
-    let resolved = resolve();
-
-    iterate(tokens, (token, index, sig) => {
-        let node = {};
-
-        // Root expects
-        // - Array
-        // - Object
-
-        console.log("Root mode", token);
-    });
-
-    return resolved;
+    const object_data = parse_object(after(tokens, -1));
+    const array_data = parse_array(after(tokens, -1));
+    
+    if (!object_data.error)
+        return object_data;
+    if (!array_data.error)
+        return array_data;
+    else {
+        if (object_data.started)
+            return object_data;
+        else if (array_data.started)
+            return array_data;
+        else 
+            return elog("[ROOT] Unexpected: " + JSON.stringify(tokens[0]) + ` OBJECT: ${!object_data.error}, ARRAY: ${!array_data.error}`);
+    }
 } 
 
-const a_str = `{
-    "name": "Rayyan Khan \\"A programmer\\"",
-    "age": 16,
-    "Has A Job": true,
-    "array": [ 1, 2, 3.000001, [1, 2, 3, { "Hi": true }], 4, 5 ]
-}`;
+const a_str = `"a": { "b": true, "are": true }`;
 
-const b_str = `"a": true`
+function JSONparser(json_in) {
+    const lexed = lex(json_in, [ token_types.WHITESPACE, token_types.NEWLINE ]);
+    const parsed = parse_property(lexed);
 
-const lexed = lex(b_str, [ token_types.WHITESPACE, token_types.NEWLINE ]);
-const parsed = parse_property()
+    return parsed;
+}
+
+const b_str = `{ "c": { "a": true, "b": 1 } }`
+
+console.clear();
+// enable_logging = true;
+const parsed = JSONparser(a_str);
+console.log(JSON.stringify(parsed, null, 4));
