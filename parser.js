@@ -30,7 +30,7 @@ function lex(source_str, ignore = []) {
     }
     
     function char_is_number(ch) {
-        let symbols = "0123456789.".split("");
+        let symbols = "0123456789.-".split("");
         return symbols.includes(ch);
     }
 
@@ -449,7 +449,8 @@ const a_str = `{
     "name": "Rayyan Khan \\"A programmer\\"",
     "age": 16,
     "Has A Job": true,
-    "arr": [ 1, 2, 3.000001, [1, 2, 3, { "Hi": true }], 4, 5 ]
+    "arr": [ 1, 2, 3.000001, [1, 2, 3, { "Hi": true }], 4, 5 ],
+    "money": -10
 }`;
 const b_str = `true`
 const c_str = `[ true, false, [] ]`;
